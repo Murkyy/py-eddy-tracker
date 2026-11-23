@@ -4,8 +4,10 @@ Class to compute Amplitude and average speed profile
 """
 
 import logging
+import numpy as np
 
-from matplotlib.cm import get_cmap
+from matplotlib import colormaps
+from matplotlib.path import Path
 from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
 from numba import njit, types as numba_types
@@ -285,6 +287,23 @@ def detect_local_minima_(grid, general_mask, pixel_mask, maximum_local_extremum,
     return xs, ys
 
 
+class _Level:
+    def __init__(self, paths):
+        self._paths = paths
+
+    def get_paths(self):
+        return self._paths
+
+
+def _split_path(path):
+    if len(path.vertices) == 0:
+        return []
+    if path.codes is None:
+        return [Path(path.vertices.copy())]
+    i = (path.codes == Path.MOVETO).nonzero()[0][1:]
+    return [Path(v.copy()) for v in np.split(path.vertices, i)]
+
+
 class Contours(object):
     """
     Class to calculate average geostrophic velocity along
@@ -304,6 +323,7 @@ class Contours(object):
 
     __slots__ = (
         "contours",
+        "collections",
         "x_value",
         "y_value",
         "contour_index",
@@ -337,7 +357,7 @@ class Contours(object):
 
     def find_wrapcut_path_and_join(self, x0, x1):
         poly_solve = 0
-        for collection in self.contours.collections:
+        for collection in self.collections:
             paths = collection.get_paths()
             paths_left = []
             paths_right = []
@@ -421,6 +441,8 @@ class Contours(object):
         self.contours = ax.contour(
             x, y, z.T if z.shape != x.shape else z, levels, cmap="rainbow"
         )
+        # matplotlib >= 3.8: one compound path per level, split it per contour
+        self.collections = [_Level(_split_path(p)) for p in self.contours.get_paths()]
         if wrap_x:
             self.find_wrapcut_path_and_join(x[0], x[-1])
         logger.info("Finish computing iso lines")
@@ -431,7 +453,7 @@ class Contours(object):
         almost_closed_contours = 0
         closed_contours = 0
         # Count level and contour
-        for i, collection in enumerate(self.contours.collections):
+        for i, collection in enumerate(self.collections):
             collection.get_nearest_path_bbox_contain_pt = (
                 lambda x, y, i=i: self.get_index_nearest_path_bbox_contain_pt(i, x, y)
             )
@@ -501,7 +523,7 @@ class Contours(object):
         i_pt = 0
         i_c = 0
         i_l = 0
-        for collection in self.contours.collections:
+        for collection in self.collections:
             self.level_index[i_l] = i_c
             for contour in collection.get_paths():
                 nb_pt = contour.vertices.shape[0]
@@ -533,7 +555,7 @@ class Contours(object):
         self.nb_contour_per_level[-1] = nb_contour - self.level_index[-1]
 
     def iter(self, start=None, stop=None, step=None):
-        return self.contours.collections[slice(start, stop, step)]
+        return self.collections[slice(start, stop, step)]
 
     @property
     def cvalues(self):
@@ -567,7 +589,7 @@ class Contours(object):
         if index == -1:
             return None
         else:
-            return self.contours.collections[level]._paths[index]
+            return self.collections[level]._paths[index]
 
     def display(
         self,
@@ -618,7 +640,7 @@ class Contours(object):
             for i in range(len(bins)):
                 paths[i] = list()
             paths[i + 1] = list()
-        for j, collection in enumerate(self.contours.collections[::step]):
+        for j, collection in enumerate(self.collections[::step]):
             if not overide_color:
                 paths = list()
             for i in collection.get_paths():
@@ -666,7 +688,7 @@ class Contours(object):
                 ax.add_collection(LineCollection(v, **local_kwargs))
         elif field is not None:
             nb_bins = len(bins) - 1
-            cmap = get_cmap(cmap, lut=nb_bins)
+            cmap = colormaps[cmap].resampled(nb_bins)
             for k, v in paths.items():
                 local_kwargs = kwargs.copy()
                 local_kwargs.pop("label", None)
@@ -699,7 +721,7 @@ class Contours(object):
             cor = -1
 
         # On each level
-        for j, collection in enumerate(self.contours.collections[sl]):
+        for j, collection in enumerate(self.collections[sl]):
             # get next height
             contour_height = self.contours.cvalues[j + cor]
             # On each contour

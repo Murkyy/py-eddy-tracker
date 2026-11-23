@@ -9,7 +9,7 @@ from tarfile import ExFileObject
 from tokenize import TokenError
 
 from Polygon import Polygon
-from matplotlib.cm import get_cmap
+from matplotlib.pyplot import get_cmap
 from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.colors import Normalize
 from netCDF4 import Dataset
@@ -29,7 +29,7 @@ from numpy import (
     floor,
     histogram,
     histogram2d,
-    in1d,
+    isin,
     isnan,
     linspace,
     ma,
@@ -2012,7 +2012,7 @@ class EddiesObservations(object):
                 return filter1[filter2[filter1]]
             # index case
             else:
-                return filter1[in1d(filter1, filter2)]
+                return filter1[isin(filter1, filter2)]
 
     def merge_filters(self, *filters):
         """
